@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from flask_pymongo import PyMongo
 from flask_cors import CORS, cross_origin
 
+import datetime
 
 class Blockchain(object):
     difficulty_target = "0000"
@@ -23,15 +24,16 @@ class Blockchain(object):
         block_encoded = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_encoded).hexdigest()
 
-    def __init__(self):
+    def __init__(self, init=False):
         self.nodes = set()
         self.chain = []
 
         self.current_transaction = []
 
         genesis_hash = self.hash_block("hashing_block_pertama")
-
-        self.append_block(hash_of_previous_block = genesis_hash, nonce = self.proof_of_work(0, genesis_hash, []))
+        
+        if init:
+            self.append_block(hash_of_previous_block = genesis_hash, nonce = self.proof_of_work(0, genesis_hash, []))
 
     def add_node(self, address):
         parse_url = urlparse(address)
@@ -98,10 +100,10 @@ class Blockchain(object):
 
         return content_hash[:len(self.difficulty_target)] == self.difficulty_target
 
-    def append_block(self, nonce, hash_of_previous_block):
+    def append_block(self, nonce, hash_of_previous_block, init=False):
         block = {
-            '_id' : len(self.chain)+1,
-            'index' : len(self.chain)+1,
+            '_id' : len(self.chain),
+            'index' : len(self.chain),
             'timestamp' : time(),
             'transaction' : self.current_transaction,
             'nonce' : nonce,
@@ -111,6 +113,10 @@ class Blockchain(object):
 
         self.current_transaction = []
         self.chain.append(block)
+
+        currentCollection = mongo.db.history_access
+        currentCollection.insert_one(block)
+
         return block
 
     def add_transaction(self, sender, recipient, doc_type,access):
@@ -118,7 +124,8 @@ class Blockchain(object):
             'sender' : sender,
             'recipient' : recipient,
             'doc_type' : doc_type,
-            'access' : access
+            'access' : access,
+            'datetime': datetime.datetime.now()
         })
         return self.last_block['index'] + 1
 
@@ -151,7 +158,7 @@ chain = []
 for doc in temp_chain:
     chain.append(doc)
 if len(chain) == 0:
-    blockchain = Blockchain()
+    blockchain = Blockchain(True)
 else:
     blockchain.chain = chain
 
@@ -178,9 +185,6 @@ def mine_block():
     nonce = blockchain.proof_of_work(index, last_block_hash, blockchain.current_transaction)
 
     block = blockchain.append_block(nonce, last_block_hash)
-
-    currentCollection = mongo.db.history_access
-    currentCollection.insert_one(block)
 
     response = {
         'message' : "Block baru telah ditambahkan (mined)",
@@ -244,6 +248,22 @@ def sync():
         }
     
     return jsonify(response), 200
+
+@app.route('/check_access', methods=['GET'])
+def check_access():
+    values = request.get_json()
+
+    required_fields = ['sender', 'recipient', 'doc_type']
+    if not all(k in values for k in required_fields):
+        return ("Missing fields", 400)
+    
+    currentCollection = mongo.db.history_access
+    holder = list()
+    datas = currentCollection.find({'transaction.sender':values['sender'], 'transaction.recipient':values['recipient'], 'transaction.doc_type':values['doc_type']})
+    for i,data in enumerate(datas):
+        holder.append(data['transaction'])
+
+    return jsonify(holder), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(sys.argv[1]))
