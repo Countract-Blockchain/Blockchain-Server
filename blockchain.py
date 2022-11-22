@@ -20,7 +20,7 @@ import datetime
 def myconverter(o):
     if isinstance(o, datetime.datetime):
         return o.__str__()
-
+ip_countract = "localhost:5000"
 class Blockchain(object):
     difficulty_target = "0000"
 
@@ -218,7 +218,7 @@ def new_transaction():
         values['owner_id'], 
         values['doc_id']
     )
-    if len(blockchain.current_transaction) >= 2:
+    if len(blockchain.current_transaction) >= 1:
         mine_block()
     response = {'message': f'Riwayat telah ditambahkan ke block {index}'}
 
@@ -366,6 +366,60 @@ def count_access_by_doc_id():
         response[k]['0'] = len(v['0'])
 
     return jsonify(response), 200
+
+@app.route('/dokumen/<doc_id>', methods=['GET'])
+def list_access(doc_id):
+
+    if doc_id == None:
+        return ("Missing fields", 400)
+
+    currentCollection = mongo.db.history_access
+    holder = list()
+    datas = currentCollection.find({'transaction.doc_id':int(doc_id), 'transaction.access':1})
+    
+    for i,data in enumerate(datas):
+        holder.append(data['transaction'])
+    
+    flatten_list = [j for sub in holder for j in sub]
+
+    list_recipients = []
+    list_date = []
+    list_name = []
+
+    for i in range(len(flatten_list)):
+        list_recipients.append(flatten_list[i]["recipient"])
+        list_date.append(flatten_list[i]["datetime"])
+        data = requests.get(f'http://{ip_countract}/user/{int(flatten_list[i]["recipient"])}')
+        print(data)
+        list_name.append(data.json()["name"])
+
+    response = []
+
+    for i in range(len(list_name)):
+        temp = {
+            'nama_pengakses':list_name[i],
+            'tanggal':list_date[i].strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        }
+        response.append(temp)
+        
+    return jsonify(response), 200
+
+@app.route('/get_access/user/<id>', methods=['GET'])
+def get_access_by_id_usr(id):
+    if id == None:
+        return ("Missing fields", 400)
+
+    currentCollection = mongo.db.history_access
+    holder = list()
+    datas = currentCollection.find({'transaction.owner_id':int(id)})
+
+    for i,data in enumerate(datas):
+        holder.append(data['transaction'])
+    
+    flatten_list = [j for sub in holder for j in sub]
+    for i in range(len(flatten_list)):
+        flatten_list[i]['datetime'] = flatten_list[i]['datetime'].strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return jsonify(flatten_list), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(sys.argv[1]), debug=True)
