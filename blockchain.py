@@ -300,19 +300,19 @@ def count_access():
     for i in range(len(flatten_list)):
         if flatten_list[i]['doc_type'] in list_dict:
             if flatten_list[i]['sender'] == flatten_list[i]['owner_id']:
-                if flatten_list[i]['access'] == "1":
+                if flatten_list[i]['access'] == 1:
                     list_dict[flatten_list[i]['doc_type']]['1'].append(flatten_list[i]['recipient'])
-                if flatten_list[i]['access'] == "0":
+                if flatten_list[i]['access'] == 0:
                     list_dict[flatten_list[i]['doc_type']]['0'].append(flatten_list[i]['recipient'])
-                if flatten_list[i]['access'] == "-1" and (flatten_list[i]['recipient'] in list_dict[flatten_list[i]['doc_type']]['1']):
+                if flatten_list[i]['access'] == -1 and (flatten_list[i]['recipient'] in list_dict[flatten_list[i]['doc_type']]['1']):
                     list_dict[flatten_list[i]['doc_type']]['1'].remove(flatten_list[i]['recipient'])
         else:
             list_dict[flatten_list[i]['doc_type']] = {'1':[],'0':[]}
             response[flatten_list[i]['doc_type']] = {'1':[],'0':[]}
             if flatten_list[i]['sender'] == flatten_list[i]['owner_id']:
-                if flatten_list[i]['access'] == "1":
+                if flatten_list[i]['access'] == 1:
                     list_dict[flatten_list[i]['doc_type']]['1'].append(flatten_list[i]['recipient'])
-                if flatten_list[i]['access'] == "0":
+                if flatten_list[i]['access'] == 0:
                     list_dict[flatten_list[i]['doc_type']]['0'].append(flatten_list[i]['recipient'])
     
     # print(list_dict)
@@ -322,7 +322,50 @@ def count_access():
 
     return jsonify(response), 200
 
+@app.route('/count_access_by_doc', methods=['GET'])
+def count_access_by_doc_id():
+    values = request.get_json()
+    print(values)
+    required_fields = ['doc_id']
+    if not all(k in values for k in required_fields):
+        return ("Missing fields", 400)
+
+    currentCollection = mongo.db.history_access
+    holder = list()
+    datas = currentCollection.find({'transaction.doc_id':values['doc_id']})
+
+    for i,data in enumerate(datas):
+        holder.append(data['transaction'])
     
+    flatten_list = [j for sub in holder for j in sub]
+
+    # print(flatten_list)
+    list_dict = {}
+    response = {}
+    for i in range(len(flatten_list)):
+        if flatten_list[i]['doc_type'] in list_dict:
+            if flatten_list[i]['sender'] == flatten_list[i]['owner_id']:
+                if flatten_list[i]['access'] == 1:
+                    list_dict[flatten_list[i]['doc_type']]['1'].append(flatten_list[i]['recipient'])
+                if flatten_list[i]['access'] == 0:
+                    list_dict[flatten_list[i]['doc_type']]['0'].append(flatten_list[i]['recipient'])
+                if flatten_list[i]['access'] == -1 and (flatten_list[i]['recipient'] in list_dict[flatten_list[i]['doc_type']]['1']):
+                    list_dict[flatten_list[i]['doc_type']]['1'].remove(flatten_list[i]['recipient'])
+        else:
+            list_dict[flatten_list[i]['doc_type']] = {'1':[],'0':[]}
+            response[flatten_list[i]['doc_type']] = {'1':[],'0':[]}
+            if flatten_list[i]['sender'] == flatten_list[i]['owner_id']:
+                if flatten_list[i]['access'] == 1:
+                    list_dict[flatten_list[i]['doc_type']]['1'].append(flatten_list[i]['recipient'])
+                if flatten_list[i]['access'] == 0:
+                    list_dict[flatten_list[i]['doc_type']]['0'].append(flatten_list[i]['recipient'])
+    
+    # print(list_dict)
+    for k, v in list_dict.items():
+        response[k]['1'] = len(v['1'])
+        response[k]['0'] = len(v['0'])
+
+    return jsonify(response), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(sys.argv[1]), debug=True)
