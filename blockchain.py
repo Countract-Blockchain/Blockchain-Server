@@ -17,11 +17,15 @@ from flask_cors import CORS, cross_origin
 
 import datetime
 
+def myconverter(o):
+    if isinstance(o, datetime.datetime):
+        return o.__str__()
+
 class Blockchain(object):
     difficulty_target = "0000"
 
     def hash_block(self, block):
-        block_encoded = json.dumps(block, sort_keys=True).encode()
+        block_encoded = json.dumps(block, sort_keys=True, default=myconverter).encode()
         return hashlib.sha256(block_encoded).hexdigest()
 
     def __init__(self, init=False):
@@ -119,12 +123,14 @@ class Blockchain(object):
 
         return block
 
-    def add_transaction(self, sender, recipient, doc_type,access):
+    def add_transaction(self, sender, recipient, doc_type, access, owner_id, doc_id):
         self.current_transaction.append({
             'sender' : sender,
             'recipient' : recipient,
             'doc_type' : doc_type,
             'access' : access,
+            'owner_id':owner_id,
+            'doc_id':doc_id,
             'datetime': datetime.datetime.now()
         })
         return self.last_block['index'] + 1
@@ -200,7 +206,7 @@ def mine_block():
 def new_transaction():
     values = request.get_json()
 
-    required_fields = ['sender', 'recipient', 'doc_type', 'access']
+    required_fields = ['sender', 'recipient', 'doc_type', 'access', 'owner_id', 'doc_id']
     if not all(k in values for k in required_fields):
         return ("Missing fields", 400)
     
@@ -208,9 +214,12 @@ def new_transaction():
         values['sender'],
         values['recipient'],
         values['doc_type'],
-        values['access']
+        values['access'],
+        values['owner_id'], 
+        values['doc_id']
     )
-
+    if len(blockchain.current_transaction) >= 2:
+        mine_block()
     response = {'message': f'Riwayat telah ditambahkan ke block {index}'}
 
     return (jsonify(response), 201)
@@ -253,7 +262,7 @@ def sync():
 def check_access():
     values = request.get_json()
 
-    required_fields = ['sender', 'recipient', 'doc_type']
+    required_fields = ['sender', 'recipient', 'doc_type', 'owner_id']
     if not all(k in values for k in required_fields):
         return ("Missing fields", 400)
     
@@ -263,7 +272,57 @@ def check_access():
     for i,data in enumerate(datas):
         holder.append(data['transaction'])
 
-    return jsonify(holder), 200
+    response = holder[-1][-1]
+    return jsonify(response), 200
+
+@app.route('/count_access', methods=['GET'])
+def count_access():
+    values = request.get_json()
+
+    required_fields = ['owner_id']
+    if not all(k in values for k in required_fields):
+        return ("Missing fields", 400)
+
+    currentCollection = mongo.db.history_access
+    holder = list()
+    datas = currentCollection.find({'transaction.sender':values['owner_id'], 'transaction.owner_id':values['owner_id']})
+
+    for i,data in enumerate(datas):
+        holder.append(data['transaction'])
+    
+    flatten_list = [j for sub in holder for j in sub]
+
+    # print(flatten_list)
+
+    
+    list_dict = {}
+    response = {}
+    for i in range(len(flatten_list)):
+        if flatten_list[i]['doc_type'] in list_dict:
+            if flatten_list[i]['sender'] == flatten_list[i]['owner_id']:
+                if flatten_list[i]['access'] == "1":
+                    list_dict[flatten_list[i]['doc_type']]['1'].append(flatten_list[i]['recipient'])
+                if flatten_list[i]['access'] == "0":
+                    list_dict[flatten_list[i]['doc_type']]['0'].append(flatten_list[i]['recipient'])
+                if flatten_list[i]['access'] == "-1" and (flatten_list[i]['recipient'] in list_dict[flatten_list[i]['doc_type']]['1']):
+                    list_dict[flatten_list[i]['doc_type']]['1'].remove(flatten_list[i]['recipient'])
+        else:
+            list_dict[flatten_list[i]['doc_type']] = {'1':[],'0':[]}
+            response[flatten_list[i]['doc_type']] = {'1':[],'0':[]}
+            if flatten_list[i]['sender'] == flatten_list[i]['owner_id']:
+                if flatten_list[i]['access'] == "1":
+                    list_dict[flatten_list[i]['doc_type']]['1'].append(flatten_list[i]['recipient'])
+                if flatten_list[i]['access'] == "0":
+                    list_dict[flatten_list[i]['doc_type']]['0'].append(flatten_list[i]['recipient'])
+    
+    # print(list_dict)
+    for k, v in list_dict.items():
+        response[k]['1'] = len(v['1'])
+        response[k]['0'] = len(v['0'])
+
+    return jsonify(response), 200
+
+    
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(sys.argv[1]))
+    app.run(host='0.0.0.0', port=int(sys.argv[1]), debug=True)
