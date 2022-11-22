@@ -1,0 +1,5 @@
+uuid
+requests
+urllib
+flask_pymongo
+flask_cors
